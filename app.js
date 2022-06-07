@@ -1,71 +1,70 @@
-const express = require('express')
-const bodyParser = require('body-parser')
+const path = require('path');
 
-const sequelize = require('./util/database')
-const path = require('path')
-const errorController = require('./controllers/error')
-const Product = require('./models/product')
-const User = require('./models/user')
-const Cart = require('./models/cart')
-const CartItem = require('./models/cart-item')
-const Order = require('./models/order')
-const OrderItem = require('./models/order-item')
+const express = require('express');
+const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+const session = require('express-session')
+const mongodbStore = require('connect-mongodb-session')(session)
 
-const app = express()
+const errorController = require('./controllers/error');
+const User = require('./models/user');
+const mongodb_URI =  'mongodb+srv://newUser:gakSEVoyZzYMzTGH@cluster0.bioyf.mongodb.net/SHOP'
 
-app.set('view engine', 'ejs')
-app.set('views', 'views')
+const app = express();
+const store = new mongodbStore({
+  uri: mongodb_URI,
+  collection: 'sessions'
+})
 
-const adminRoutes = require('./routes/admin')
-const shopRoutes = require('./routes/shop')
+app.set('view engine', 'ejs');
+app.set('views', 'views');
 
+const adminRoutes = require('./routes/admin');
+const shopRoutes = require('./routes/shop');
+const authRoutes = require('./routes/auth');
 
-app.use(bodyParser.urlencoded({extended: false}))
-app.use(express.static(path.join(__dirname, 'public')))
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(session({secret: 'my secret', resave: false, saveUninitialized: false, store: store}))
 
 app.use((req, res, next) => {
-    User.findByPk(1)
-      .then(user => {
-        req.user = user;
-        next();
-      })
-      .catch(err => console.log(err));
-  });
+  if(!req.session.user) {
+    return next()
+  }
+  User.findById(req.session.user._id)
+  .then(user => {
+    req.user = user
+    next()
+  })
+  .catch(err => {console.log(err)})
+})
 
-app.use('/admin', adminRoutes)
-app.use(shopRoutes)
+app.use('/admin', adminRoutes);
+app.use(shopRoutes);
+app.use(authRoutes);
 
-app.use(errorController.get404)
+app.use(errorController.get404);
 
-Product.belongsTo(User, {constrains: true, onDelete: 'CASCADE'})
-User.hasMany(Product)
-User.hasOne(Cart)
-Cart.belongsTo(User)
-Cart.belongsToMany(Product, {through: CartItem})
-Product.belongsToMany(Cart, {through: CartItem})
-Order.belongsTo(User)
-User.hasMany(Order)
-Order.belongsToMany(Product, {through: OrderItem})
-
-sequelize
-  //.sync({ force: true })
-  .sync()
+mongoose
+  .connect(
+    mongodb_URI
+  )
   .then(result => {
-    return User.findByPk(1);
-    // console.log(result);
+    User.findOne().then(user => {
+      if (!user) {
+        const user = new User({
+          name: 'Juan',
+          email: 'test@test.com',
+          cart: {
+            items: []
+          }
+        });
+        user.save();
+      }
+    });
+    app.listen(3000);
   })
-  .then(user => {
-    if (!user) {
-      return User.create({ name: 'Max', email: 'test@test.com' });
-    }
-    return user;
-  })
-  .then(user => {
-    // console.log(user);
-    return user.createCart()
-    
-  })
-  .then(() => app.listen(3000))
+  .then(() => {console.log('Connected')})
   .catch(err => {
     console.log(err);
   });
